@@ -1,0 +1,46 @@
+{
+  "name": "piteknix",
+  "version": "0.1.0",
+  "description": "Hardware abstraction and patterns for Raspberry Pi IoT projects",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./sensors": "./src/sensors/index.js",
+    "./displays": "./src/displays/index.js",
+    "./inputs": "./src/inputs/index.js",
+    "./utils": "./src/utils/index.js"
+  },
+  "scripts": {
+    "test": "node --test src/**/*.test.js",
+    "demo": "node examples/demo.js"
+  },
+  "keywords": [
+    "raspberry-pi",
+    "iot",
+    "sensors",
+    "gpio",
+    "hardware-abstraction"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.11.2"
+  },
+  "optionalDependencies": {
+    "aht20-sensor": "^1.0.0",
+    "bme280-sensor": "^0.2.0",
+    "ds18b20": "^0.1.0",
+    "i2c-bus": "^5.2.3",
+    "oled-font-5x7": "^1.0.0",
+    "oled-i2c-bus": "^1.0.0",
+    "onoff": "^6.0.3",
+    "raspberrypi-liquid-crystal": "^1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/USERNAME/piteknix.git"
+  }
+}
