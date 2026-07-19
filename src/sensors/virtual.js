@@ -23,6 +23,7 @@ const VIRTUAL_DEFAULTS = {
  */
 export const createVirtualSensor = async (config) => {
   const { type, virtual = {}, calibrationOffset = 0 } = config;
+  const { fault = null } = virtual;
 
   const defaults = VIRTUAL_DEFAULTS[type] || VIRTUAL_DEFAULTS.ds18b20;
   const mergedConfig = {
@@ -40,11 +41,18 @@ export const createVirtualSensor = async (config) => {
     ? createDriftGenerator(mergedConfig.pressure)
     : null;
 
+  const enoent = () =>
+    Object.assign(new Error("ENOENT: sensor not found"), { code: "ENOENT" });
+
   return {
     type: `virtual-${type}`,
     isVirtual: true,
+    fault,
 
     async read() {
+      if (fault === "enoent" || fault === "absent") throw enoent();
+      if (fault === "stuck85") return { temperature: 85 };
+
       const result = {
         temperature: tempGenerator() + calibrationOffset,
       };
@@ -61,7 +69,8 @@ export const createVirtualSensor = async (config) => {
     },
 
     async readTemperature() {
-      return tempGenerator() + calibrationOffset;
+      const data = await this.read();
+      return data.temperature;
     },
 
     async readHumidity() {
@@ -80,7 +89,7 @@ export const createVirtualSensor = async (config) => {
 
     async listSensors() {
       // Return fake sensor IDs for virtual mode
-      return ["virtual-sensor-001"];
+      return fault === "absent" ? [] : ["virtual-sensor-001"];
     },
 
     async cleanup() {

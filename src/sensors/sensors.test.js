@@ -19,3 +19,33 @@ test("aht20 virtual read applies calibration offset and returns humidity", async
   assert.equal(data.humidity, 50);
   await sensor.cleanup();
 });
+
+test("ds18b20 virtual fault 'enoent' makes read reject with ENOENT", async () => {
+  const sensor = await createSensor({
+    type: "ds18b20",
+    virtual: { fault: "enoent" },
+  });
+  await assert.rejects(() => sensor.read(), (err) => err.code === "ENOENT");
+  await sensor.cleanup();
+});
+
+test("ds18b20 virtual fault 'stuck85' returns raw 85.0", async () => {
+  const sensor = await createSensor({
+    type: "ds18b20",
+    calibrationOffset: 1.2,
+    virtual: { fault: "stuck85" },
+  });
+  const data = await sensor.read();
+  assert.equal(data.temperature, 85); // raw, offset not applied to fault
+  await sensor.cleanup();
+});
+
+test("ds18b20 virtual fault 'absent' lists no sensors", async () => {
+  const sensor = await createSensor({
+    type: "ds18b20",
+    virtual: { fault: "absent" },
+  });
+  assert.deepEqual(await sensor.listSensors(), []);
+  await assert.rejects(() => sensor.read(), (err) => err.code === "ENOENT");
+  await sensor.cleanup();
+});
