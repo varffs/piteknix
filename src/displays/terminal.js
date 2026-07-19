@@ -92,6 +92,10 @@ const createTerminalLcd = (width, height) => {
       scheduleRender();
     },
 
+    getLines() {
+      return buffer.slice();
+    },
+
     setBacklight(on) {
       backlightOn = on;
       scheduleRender();
