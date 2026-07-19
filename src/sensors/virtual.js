@@ -22,7 +22,7 @@ const VIRTUAL_DEFAULTS = {
  * Create a virtual sensor for development/testing
  */
 export const createVirtualSensor = async (config) => {
-  const { type, virtual = {}, calibrationOffset = 0 } = config;
+  const { type, id, virtual = {}, calibrationOffset = 0 } = config;
   const { fault = null } = virtual;
 
   const defaults = VIRTUAL_DEFAULTS[type] || VIRTUAL_DEFAULTS.ds18b20;
@@ -89,7 +89,21 @@ export const createVirtualSensor = async (config) => {
 
     async listSensors() {
       // Return fake sensor IDs for virtual mode
-      return fault === "absent" ? [] : ["virtual-sensor-001"];
+      return fault === "absent" ? [] : [id || "virtual-sensor-001"];
+    },
+
+    async diagnose() {
+      const { classifyDs18b20 } = await import("./diagnose.js");
+      const busDevices = await this.listSensors();
+      let reading = null;
+      let error = null;
+      try {
+        const data = await this.read();
+        reading = data.temperature;
+      } catch (e) {
+        error = e;
+      }
+      return classifyDs18b20({ id: config.id, busDevices, reading, error });
     },
 
     async cleanup() {

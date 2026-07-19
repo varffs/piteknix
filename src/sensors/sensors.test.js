@@ -49,3 +49,32 @@ test("ds18b20 virtual fault 'absent' lists no sensors", async () => {
   await assert.rejects(() => sensor.read(), (err) => err.code === "ENOENT");
   await sensor.cleanup();
 });
+
+test("diagnose: healthy virtual ds18b20 -> ok", async () => {
+  const s = await createSensor({ type: "ds18b20", id: "28-x", virtual: { temperature: { min: 22, max: 22, initialValue: 22 } } });
+  const d = await s.diagnose();
+  assert.equal(d.status, "ok");
+  assert.equal(d.targetPresent, true);
+});
+
+test("diagnose: absent -> status absent, empty bus", async () => {
+  const s = await createSensor({ type: "ds18b20", id: "28-x", virtual: { fault: "absent" } });
+  const d = await s.diagnose();
+  assert.equal(d.status, "absent");
+  assert.deepEqual(d.busDevices, []);
+  assert.equal(d.targetPresent, false);
+});
+
+test("diagnose: stuck85 -> error flagged for wiring/power", async () => {
+  const s = await createSensor({ type: "ds18b20", id: "28-x", virtual: { fault: "stuck85" } });
+  const d = await s.diagnose();
+  assert.equal(d.status, "error");
+  assert.match(d.detail, /85\.0/);
+});
+
+test("diagnose: enoent -> error, dropped off bus", async () => {
+  const s = await createSensor({ type: "ds18b20", id: "28-x", virtual: { fault: "enoent" } });
+  const d = await s.diagnose();
+  assert.equal(d.status, "error");
+  assert.equal(d.lastError.code, "ENOENT");
+});

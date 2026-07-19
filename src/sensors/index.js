@@ -79,6 +79,30 @@ const createDs18b20Sensor = async (sensorId, calibrationOffset) => {
       });
     },
 
+    async diagnose() {
+      const { classifyDs18b20 } = await import("./diagnose.js");
+      let busDevices = [];
+      try {
+        busDevices = await this.listSensors();
+      } catch (e) {
+        return { status: "error", detail: `1-wire bus error: ${e.message}`, busDevices: [], targetPresent: false, lastError: { code: e.code ?? null, message: e.message } };
+      }
+      let reading = null;
+      let error = null;
+      try {
+        // read() adds calibrationOffset; subtract it back for raw 85.0 detection
+        const raw = await new Promise((res, rej) => this._rawRead ? this._rawRead(res, rej) : rej(new Error("no raw read")));
+        reading = raw;
+      } catch (e) {
+        error = e;
+      }
+      return classifyDs18b20({ id: sensorId, busDevices, reading, error });
+    },
+
+    _rawRead(resolve, reject) {
+      ds18b20.temperature(sensorId, (err, value) => (err ? reject(err) : resolve(value)));
+    },
+
     async cleanup() {
       // No cleanup needed for 1-Wire
     },
