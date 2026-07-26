@@ -1,4 +1,5 @@
 import { isVirtualMode } from "../env.js";
+import { cjsDefault } from "../utils/cjs.js";
 import { createVirtualSensor } from "./virtual.js";
 
 /**
@@ -46,7 +47,7 @@ const createHardwareSensor = async (config) => {
  * DS18B20 1-Wire temperature sensor
  */
 const createDs18b20Sensor = async (sensorId, calibrationOffset) => {
-  const ds18b20 = (await import("ds18b20")).default;
+  const ds18b20 = cjsDefault(await import("ds18b20"));
 
   return {
     type: "ds18b20",
@@ -113,7 +114,9 @@ const createDs18b20Sensor = async (sensorId, calibrationOffset) => {
  * AHT20 I2C temperature/humidity sensor
  */
 const createAht20Sensor = async (calibrationOffset) => {
-  const aht20 = (await import("aht20-sensor")).default;
+  // aht20-sensor is transpiled CJS (module.exports = { default: API }) —
+  // needs the double unwrap; verified against the real sensor on-device
+  const aht20 = cjsDefault(await import("aht20-sensor"));
 
   return {
     type: "aht20",
@@ -149,7 +152,7 @@ const createAht20Sensor = async (calibrationOffset) => {
  * BME280 I2C temperature/humidity/pressure sensor
  */
 const createBme280Sensor = async (address = 0x76, bus = 1, calibrationOffset) => {
-  const bme280 = (await import("bme280-sensor")).default;
+  const bme280 = cjsDefault(await import("bme280-sensor"));
 
   const sensor = await bme280.open({
     i2cBusNumber: bus,

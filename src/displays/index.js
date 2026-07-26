@@ -1,4 +1,5 @@
 import { isVirtualMode } from "../env.js";
+import { cjsDefault } from "../utils/cjs.js";
 import { createTerminalDisplay } from "./terminal.js";
 
 /**
@@ -44,7 +45,7 @@ const createHardwareDisplay = async (config) => {
 const createLcdDisplay = async (config) => {
   const { width = 16, height = 2, address = 0x27, bus = 1 } = config;
 
-  const LCD = (await import("raspberrypi-liquid-crystal")).default;
+  const LCD = cjsDefault(await import("raspberrypi-liquid-crystal"));
   const lcd = new LCD(bus, address, width, height);
 
   lcd.beginSync();
@@ -72,11 +73,13 @@ const createLcdDisplay = async (config) => {
     },
 
     setBacklight(on) {
-      if (on) {
-        lcd.backlightSync();
-      } else {
-        lcd.noBacklightSync();
-      }
+      // raspberrypi-liquid-crystal (<=1.20.0) has no backlight API. The
+      // PCF8574 backlight bit lives in displayPorts.backlight and is OR'd
+      // into every I2C write, so mutate it and latch it onto the bus with a
+      // benign command write. noDisplaySync() would also drop the bit, but
+      // it blanks the LCD content too — we want text visible while dark.
+      lcd.displayPorts.backlight = on ? 0x08 : 0x00;
+      lcd.noCursorSync();
     },
 
     async cleanup() {
@@ -92,9 +95,9 @@ const createLcdDisplay = async (config) => {
 const createOledDisplay = async (config) => {
   const { width = 128, height = 64, address = 0x3c, bus = 1 } = config;
 
-  const i2c = (await import("i2c-bus")).default;
-  const Oled = (await import("oled-i2c-bus")).default;
-  const font = (await import("oled-font-5x7")).default;
+  const i2c = cjsDefault(await import("i2c-bus"));
+  const Oled = cjsDefault(await import("oled-i2c-bus"));
+  const font = cjsDefault(await import("oled-font-5x7"));
 
   const i2cBus = i2c.openSync(bus);
   const oled = new Oled(i2cBus, { width, height, address });
