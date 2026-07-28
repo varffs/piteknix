@@ -30,9 +30,11 @@ const makeFakeAht20 = () => {
   let opens = 0;
   let closes = 0;
   let failNextRead = false;
+  let failClose = false;
   const sensor = {
     bus: {
       async close() {
+        if (failClose) throw new Error("close failed");
         closes++;
       },
     },
@@ -65,6 +67,9 @@ const makeFakeAht20 = () => {
     closes: () => closes,
     failNextRead: () => {
       failNextRead = true;
+    },
+    failClose: () => {
+      failClose = true;
     },
   };
 };
@@ -103,6 +108,24 @@ test("aht20 hardware read closes the bus even when the measurement throws", asyn
   fake.failNextRead();
   await assert.rejects(() => sensor.read(), /i2c read failed/);
   assert.equal(fake.closes(), 1);
+  await sensor.cleanup();
+});
+
+test("aht20 hardware read error is not masked by a close failure", async () => {
+  const fake = makeFakeAht20();
+  const sensor = await createAht20Sensor({ driver: fake.module });
+  fake.failNextRead();
+  fake.failClose();
+  await assert.rejects(() => sensor.read(), /i2c read failed/);
+  await sensor.cleanup();
+});
+
+test("aht20 hardware read still returns data when only the close fails", async () => {
+  const fake = makeFakeAht20();
+  const sensor = await createAht20Sensor({ driver: fake.module });
+  fake.failClose();
+  const data = await sensor.read();
+  assert.equal(data.humidity, 50);
   await sensor.cleanup();
 });
 

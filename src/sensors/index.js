@@ -145,8 +145,10 @@ export const createAht20Sensor = async ({ calibrationOffset = 0, driver } = {}) 
         // fd, hitting EMFILE after ~3.5 days at a 5-min poll (#3). Open per
         // read is kept deliberately: holding a handle from the factory would
         // move bus failure to boot and crash-loop an unattended device that
-        // currently just reports the fault.
-        await sensor.bus.close();
+        // currently just reports the fault. The catch keeps a close failure
+        // (likely correlated with a read failure — bus gone) from masking
+        // the read error the caller actually needs.
+        await sensor.bus.close().catch((e) => console.error(`aht20 bus close failed: ${e.message}`));
       }
     },
 
