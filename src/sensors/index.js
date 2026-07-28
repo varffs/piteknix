@@ -112,19 +112,25 @@ const createDs18b20Sensor = async (sensorId, calibrationOffset) => {
 
 /**
  * AHT20 I2C temperature/humidity sensor
+ *
+ * Exported for direct use and testing; `driver` injects the aht20-sensor
+ * module API (its `open()` entry point) in place of the real import.
  */
-const createAht20Sensor = async (calibrationOffset) => {
+export const createAht20Sensor = async (calibrationOffset = 0, driver) => {
   // aht20-sensor is transpiled CJS (module.exports = { default: API }) —
   // needs the double unwrap; verified against the real sensor on-device
-  const aht20 = cjsDefault(await import("aht20-sensor"));
+  const aht20 = driver ?? cjsDefault(await import("aht20-sensor"));
 
   return {
     type: "aht20",
 
     async read() {
       const sensor = await aht20.open();
-      const temperature = await sensor.temperature();
-      const humidity = await sensor.humidity();
+      // One measurement for the pair. The driver's temperature()/humidity()
+      // accessors each take a full ~80ms measurement and discard the half not
+      // asked for — calling both doubled the poll time and paired values from
+      // different measurements.
+      const { temperature, humidity } = await sensor.readData();
 
       return {
         temperature: temperature + calibrationOffset,

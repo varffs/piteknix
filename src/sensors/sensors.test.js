@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSensor } from "./index.js";
+import { createSensor, createAht20Sensor } from "./index.js";
 
 // Force virtual mode regardless of host
 process.env.VIRTUAL_MODE = "true";
@@ -17,6 +17,46 @@ test("aht20 virtual read applies calibration offset and returns humidity", async
   const data = await sensor.read();
   assert.equal(data.temperature, 21.2); // 20 + 1.2
   assert.equal(data.humidity, 50);
+  await sensor.cleanup();
+});
+
+// Mirrors the real driver's shape (aht20-sensor/AHT20.js): readData() is one
+// measurement returning both values; temperature()/humidity() each take their
+// own full measurement and discard the half not asked for.
+const makeFakeAht20 = () => {
+  let measurements = 0;
+  const sensor = {
+    async readData() {
+      measurements++;
+      return { temperature: 20, humidity: 50 };
+    },
+    async temperature() {
+      const { temperature } = await sensor.readData();
+      return temperature;
+    },
+    async humidity() {
+      const { humidity } = await sensor.readData();
+      return humidity;
+    },
+  };
+  return { module: { open: async () => sensor }, measurements: () => measurements };
+};
+
+test("aht20 hardware read takes one measurement and returns the atomic pair", async () => {
+  const fake = makeFakeAht20();
+  const sensor = await createAht20Sensor(1.2, fake.module);
+  const data = await sensor.read();
+  assert.equal(data.temperature, 21.2); // 20 + 1.2
+  assert.equal(data.humidity, 50);
+  assert.equal(fake.measurements(), 1);
+  await sensor.cleanup();
+});
+
+test("aht20 hardware readTemperature costs a single measurement", async () => {
+  const fake = makeFakeAht20();
+  const sensor = await createAht20Sensor(0, fake.module);
+  assert.equal(await sensor.readTemperature(), 20);
+  assert.equal(fake.measurements(), 1);
   await sensor.cleanup();
 });
 
