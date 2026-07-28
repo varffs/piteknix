@@ -33,7 +33,7 @@ const createHardwareSensor = async (config) => {
       return createDs18b20Sensor(id, calibrationOffset);
 
     case "aht20":
-      return createAht20Sensor(calibrationOffset);
+      return createAht20Sensor({ calibrationOffset });
 
     case "bme280":
       return createBme280Sensor(address, bus, calibrationOffset);
@@ -115,8 +115,10 @@ const createDs18b20Sensor = async (sensorId, calibrationOffset) => {
  *
  * Exported for direct use and testing; `driver` injects the aht20-sensor
  * module API (its `open()` entry point) in place of the real import.
+ * Options object rather than positional args so a driver-only call can't be
+ * silently taken as a numeric offset.
  */
-export const createAht20Sensor = async (calibrationOffset = 0, driver) => {
+export const createAht20Sensor = async ({ calibrationOffset = 0, driver } = {}) => {
   // aht20-sensor is transpiled CJS (module.exports = { default: API }) —
   // needs the double unwrap; verified against the real sensor on-device
   const aht20 = driver ?? cjsDefault(await import("aht20-sensor"));
@@ -126,16 +128,26 @@ export const createAht20Sensor = async (calibrationOffset = 0, driver) => {
 
     async read() {
       const sensor = await aht20.open();
-      // One measurement for the pair. The driver's temperature()/humidity()
-      // accessors each take a full ~80ms measurement and discard the half not
-      // asked for — calling both doubled the poll time and paired values from
-      // different measurements.
-      const { temperature, humidity } = await sensor.readData();
+      try {
+        // One measurement for the pair. The driver's temperature()/humidity()
+        // accessors each take a full ~80ms measurement and discard the half
+        // not asked for — calling both doubled the poll time and paired values
+        // from different measurements.
+        const { temperature, humidity } = await sensor.readData();
 
-      return {
-        temperature: temperature + calibrationOffset,
-        humidity,
-      };
+        return {
+          temperature: temperature + calibrationOffset,
+          humidity,
+        };
+      } finally {
+        // open() opens a fresh /dev/i2c-1 handle every call and the AHT20
+        // class has no close of its own — without this every read leaks an
+        // fd, hitting EMFILE after ~3.5 days at a 5-min poll (#3). Open per
+        // read is kept deliberately: holding a handle from the factory would
+        // move bus failure to boot and crash-loop an unattended device that
+        // currently just reports the fault.
+        await sensor.bus.close();
+      }
     },
 
     async readTemperature() {
@@ -149,7 +161,8 @@ export const createAht20Sensor = async (calibrationOffset = 0, driver) => {
     },
 
     async cleanup() {
-      // Sensor auto-closes after read
+      // Nothing held between reads — each read opens and closes its own
+      // bus handle.
     },
   };
 };

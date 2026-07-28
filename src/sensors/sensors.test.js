@@ -22,11 +22,25 @@ test("aht20 virtual read applies calibration offset and returns humidity", async
 
 // Mirrors the real driver's shape (aht20-sensor/AHT20.js): readData() is one
 // measurement returning both values; temperature()/humidity() each take their
-// own full measurement and discard the half not asked for.
+// own full measurement and discard the half not asked for; open() opens a new
+// i2c bus handle per call and the instance exposes it as `bus` — the class has
+// no close of its own.
 const makeFakeAht20 = () => {
   let measurements = 0;
+  let opens = 0;
+  let closes = 0;
+  let failNextRead = false;
   const sensor = {
+    bus: {
+      async close() {
+        closes++;
+      },
+    },
     async readData() {
+      if (failNextRead) {
+        failNextRead = false;
+        throw new Error("i2c read failed");
+      }
       measurements++;
       return { temperature: 20, humidity: 50 };
     },
@@ -39,12 +53,25 @@ const makeFakeAht20 = () => {
       return humidity;
     },
   };
-  return { module: { open: async () => sensor }, measurements: () => measurements };
+  return {
+    module: {
+      open: async () => {
+        opens++;
+        return sensor;
+      },
+    },
+    measurements: () => measurements,
+    opens: () => opens,
+    closes: () => closes,
+    failNextRead: () => {
+      failNextRead = true;
+    },
+  };
 };
 
 test("aht20 hardware read takes one measurement and returns the atomic pair", async () => {
   const fake = makeFakeAht20();
-  const sensor = await createAht20Sensor(1.2, fake.module);
+  const sensor = await createAht20Sensor({ calibrationOffset: 1.2, driver: fake.module });
   const data = await sensor.read();
   assert.equal(data.temperature, 21.2); // 20 + 1.2
   assert.equal(data.humidity, 50);
@@ -54,9 +81,28 @@ test("aht20 hardware read takes one measurement and returns the atomic pair", as
 
 test("aht20 hardware readTemperature costs a single measurement", async () => {
   const fake = makeFakeAht20();
-  const sensor = await createAht20Sensor(0, fake.module);
+  const sensor = await createAht20Sensor({ driver: fake.module });
   assert.equal(await sensor.readTemperature(), 20);
   assert.equal(fake.measurements(), 1);
+  await sensor.cleanup();
+});
+
+test("aht20 hardware read closes every bus handle it opens", async () => {
+  const fake = makeFakeAht20();
+  const sensor = await createAht20Sensor({ driver: fake.module });
+  await sensor.read();
+  await sensor.read();
+  assert.equal(fake.opens(), 2);
+  assert.equal(fake.closes(), 2);
+  await sensor.cleanup();
+});
+
+test("aht20 hardware read closes the bus even when the measurement throws", async () => {
+  const fake = makeFakeAht20();
+  const sensor = await createAht20Sensor({ driver: fake.module });
+  fake.failNextRead();
+  await assert.rejects(() => sensor.read(), /i2c read failed/);
+  assert.equal(fake.closes(), 1);
   await sensor.cleanup();
 });
 
