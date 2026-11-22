@@ -3,14 +3,16 @@ import readline from "readline";
 // Global keyboard listener state
 let keyboardInitialized = false;
 const keyCallbacks = new Map();
+const keyLabels = new Map(); // key -> label, for the browser preview's buttons
 let debugCallback = null;
 
 /**
  * Create a virtual button triggered by keyboard
  */
 export const createKeyboardInput = (config) => {
-  const { gpio, virtualKey, debounce = 50 } = config;
+  const { gpio, virtualKey, label, debounce = 50 } = config;
   const key = virtualKey || String(gpio);
+  keyLabels.set(key, label ?? (gpio !== undefined ? `GPIO${gpio}` : key));
 
   const watchers = [];
   let lastPressTime = 0;
@@ -129,4 +131,23 @@ export const cleanupKeyboardListener = () => {
   }
   keyboardInitialized = false;
   keyCallbacks.clear();
+};
+
+/**
+ * Name an app-level key (one the app handles itself via process.stdin "keypress")
+ * so the browser preview shows a button for it.
+ */
+export const registerVirtualKey = (key, label) => {
+  keyLabels.set(key, label);
+};
+
+/** Keys the preview should offer: buttons and app keys, then the built-in dump. */
+export const virtualKeys = () => [
+  ...[...keyLabels].map(([key, label]) => ({ key, label })),
+  { key: "d", label: "dump state" },
+];
+
+/** Press a key as if typed: same handler, so buttons, `d` and app listeners all see it. */
+export const pressVirtualKey = (name) => {
+  process.stdin.emit("keypress", name, { name, sequence: name, ctrl: false, meta: false, shift: false });
 };

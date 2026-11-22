@@ -5,7 +5,7 @@ export { isRaspberryPi, isVirtualMode, getMode } from "./env.js";
 export { createSensor, createVirtualSensor } from "./sensors/index.js";
 
 // Displays
-export { createDisplay, createTerminalDisplay } from "./displays/index.js";
+export { createDisplay, createTerminalDisplay, createVirtualOled } from "./displays/index.js";
 
 // Inputs
 export {
@@ -14,6 +14,7 @@ export {
   createKeyboardInput,
   setupKeyboardListener,
 } from "./inputs/index.js";
+export { registerVirtualKey, virtualKeys, pressVirtualKey } from "./inputs/keyboard.js";
 
 // Utilities
 export { formatFloat, clamp, sleep, minutesToMs, getTempStatus } from "./utils/index.js";
