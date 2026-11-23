@@ -109,6 +109,14 @@ const humidity = await sensor.readHumidity();
 await sensor.cleanup();
 ```
 
+A virtual sensor returns exactly the readings its real counterpart does (a
+virtual `ds18b20` has no humidity), and an unknown `type` throws in both modes.
+
+A DS18B20 read that fails its CRC rejects with `err.code === "ECRC"` rather
+than returning a number. Simulate faults on the laptop with
+`virtual: { fault: "crc" | "enoent" | "absent" | "stuck85" }`; `sensor.diagnose()`
+classifies each.
+
 ## Displays
 
 ### Supported Types

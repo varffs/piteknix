@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSensor, createAht20Sensor } from "./index.js";
+import { createSensor, createAht20Sensor, createDs18b20Sensor } from "./index.js";
 
 // Force virtual mode regardless of host
 process.env.VIRTUAL_MODE = "true";
@@ -186,4 +186,78 @@ test("diagnose: enoent -> error, dropped off bus", async () => {
   const d = await s.diagnose();
   assert.equal(d.status, "error");
   assert.equal(d.lastError.code, "ENOENT");
+});
+
+// Mirrors the real driver (ds18b20/lib/ds18b20.js): temperature() calls back
+// (err, value); on a failed CRC it calls back (null, false) rather than erroring.
+const makeFakeDs18b20 = (value, ids = ["28-x"]) => ({
+  temperature: (_id, cb) => (value instanceof Error ? cb(value) : cb(null, value)),
+  sensors: (cb) => cb(null, ids),
+});
+
+test("ds18b20 hardware read applies the calibration offset", async () => {
+  const s = await createDs18b20Sensor({ id: "28-x", calibrationOffset: -0.5, driver: makeFakeDs18b20(21.4) });
+  assert.deepEqual(await s.read(), { temperature: 20.9 });
+  assert.equal(await s.readTemperature(), 20.9);
+});
+
+test("ds18b20 hardware read rejects a failed CRC instead of reporting 0 degrees", async () => {
+  const s = await createDs18b20Sensor({ id: "28-x", calibrationOffset: 1.2, driver: makeFakeDs18b20(false) });
+  await assert.rejects(() => s.read(), (err) => err.code === "ECRC");
+  await assert.rejects(() => s.readTemperature(), (err) => err.code === "ECRC");
+});
+
+test("ds18b20 hardware read passes a genuine 0 degrees through", async () => {
+  const s = await createDs18b20Sensor({ id: "28-x", driver: makeFakeDs18b20(0) });
+  assert.deepEqual(await s.read(), { temperature: 0 });
+});
+
+test("ds18b20 hardware diagnose: failed CRC -> error, not ok", async () => {
+  const s = await createDs18b20Sensor({ id: "28-x", driver: makeFakeDs18b20(false) });
+  const d = await s.diagnose();
+  assert.equal(d.status, "error");
+  assert.equal(d.lastError.code, "ECRC");
+  assert.match(d.detail, /CRC/);
+});
+
+test("ds18b20 hardware diagnose checks the raw reading for 85.0, ignoring the offset", async () => {
+  const s = await createDs18b20Sensor({ id: "28-x", calibrationOffset: -3, driver: makeFakeDs18b20(85) });
+  assert.match((await s.diagnose()).detail, /85\.0/);
+  const { diagnose } = s; // must not depend on `this`
+  assert.equal((await diagnose()).status, "error");
+});
+
+test("ds18b20 virtual fault 'crc' rejects like the hardware and diagnoses as CRC", async () => {
+  const s = await createSensor({ type: "ds18b20", id: "28-x", virtual: { fault: "crc" } });
+  await assert.rejects(() => s.read(), (err) => err.code === "ECRC");
+  assert.equal((await s.diagnose()).lastError.code, "ECRC");
+});
+
+test("virtual sensors report only the quantities the real sensor has", async () => {
+  const ds = await createSensor({ type: "ds18b20", id: "28-x" });
+  assert.deepEqual(Object.keys(await ds.read()), ["temperature"]);
+  await assert.rejects(() => ds.readHumidity(), /does not support humidity/);
+  await assert.rejects(() => ds.readPressure(), /does not support pressure/);
+
+  const aht = await createSensor({ type: "aht20" });
+  assert.deepEqual(Object.keys(await aht.read()).sort(), ["humidity", "temperature"]);
+
+  const bme = await createSensor({ type: "bme280" });
+  const data = await bme.read();
+  assert.deepEqual(Object.keys(data).sort(), ["humidity", "pressure", "temperature"]);
+  for (const v of Object.values(data)) assert.ok(Number.isFinite(v));
+});
+
+test("virtual humidity follows the temperature of the same reading", async () => {
+  // Fixed temperature at the top of the generator's 15-35 range: humidity must
+  // sit at the dry end. Before, a second temperature sample was drawn for it.
+  const s = await createSensor({
+    type: "aht20",
+    virtual: { temperature: { min: 35, max: 35, initialValue: 35 }, humidity: { min: 0, max: 100 } },
+  });
+  for (let i = 0; i < 20; i++) assert.ok((await s.read()).humidity <= 45 + 1e-9);
+});
+
+test("unknown sensor type is rejected in virtual mode, as on hardware", async () => {
+  await assert.rejects(() => createSensor({ type: "nonsense" }), /Unknown sensor type: nonsense/);
 });

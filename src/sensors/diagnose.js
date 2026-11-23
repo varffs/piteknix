@@ -18,6 +18,9 @@ export const classifyDs18b20 = ({ id, busDevices, reading, error }) => {
     return { status: "absent", detail: `target ${id} not on bus (wrong id or sensor disconnected)`, busDevices, targetPresent, lastError };
   }
   if (error) {
+    if (error.code === "ECRC") {
+      return { status: "error", detail: "CRC check failed — corrupt read (electrical noise / long cable / weak pull-up)", busDevices, targetPresent, lastError };
+    }
     if (error.code === "ENOENT") {
       return { status: "error", detail: "device dropped off bus during read (loose connection)", busDevices, targetPresent, lastError };
     }

@@ -25,17 +25,24 @@ export const createVirtualSensor = async (config) => {
   const { type, id, virtual = {}, calibrationOffset = 0 } = config;
   const { fault = null } = virtual;
 
-  const defaults = VIRTUAL_DEFAULTS[type] || VIRTUAL_DEFAULTS.ds18b20;
+  // Same contract as hardware: an unknown type is an error, not a ds18b20.
+  const defaults = VIRTUAL_DEFAULTS[type];
+  if (!defaults) throw new Error(`Unknown sensor type: ${type}`);
+
+  // A virtual sensor reports exactly the quantities the real one does, so code
+  // that reads `humidity` off a ds18b20 fails on the laptop, not on the Pi.
   const mergedConfig = {
     temperature: { ...defaults.temperature, ...virtual.temperature },
-    humidity: { ...defaults.humidity, ...virtual.humidity },
-    pressure: { ...defaults.pressure, ...virtual.pressure },
+    humidity: defaults.humidity ? { ...defaults.humidity, ...virtual.humidity } : null,
+    pressure: defaults.pressure ? { ...defaults.pressure, ...virtual.pressure } : null,
   };
 
-  // Create generators
+  // Create generators. Humidity follows the temperature of the same reading
+  // rather than drawing (and advancing) a second temperature sample.
   const tempGenerator = createDriftGenerator(mergedConfig.temperature);
+  let lastTemp = mergedConfig.temperature.initialValue ?? (mergedConfig.temperature.min + mergedConfig.temperature.max) / 2;
   const humidityGenerator = mergedConfig.humidity
-    ? createHumidityGenerator({ ...mergedConfig.humidity, tempGenerator })
+    ? createHumidityGenerator({ ...mergedConfig.humidity, tempGenerator: () => lastTemp })
     : null;
   const pressureGenerator = mergedConfig.pressure
     ? createDriftGenerator(mergedConfig.pressure)
@@ -43,6 +50,8 @@ export const createVirtualSensor = async (config) => {
 
   const enoent = () =>
     Object.assign(new Error("ENOENT: sensor not found"), { code: "ENOENT" });
+  const ecrc = () =>
+    Object.assign(new Error("ds18b20 CRC check failed (corrupt read)"), { code: "ECRC" });
 
   return {
     type: `virtual-${type}`,
@@ -51,10 +60,12 @@ export const createVirtualSensor = async (config) => {
 
     async read() {
       if (fault === "enoent" || fault === "absent") throw enoent();
+      if (fault === "crc") throw ecrc();
       if (fault === "stuck85") return { temperature: 85 };
 
+      lastTemp = tempGenerator();
       const result = {
-        temperature: tempGenerator() + calibrationOffset,
+        temperature: lastTemp + calibrationOffset,
       };
 
       if (humidityGenerator) {

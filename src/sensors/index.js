@@ -30,7 +30,7 @@ const createHardwareSensor = async (config) => {
 
   switch (type) {
     case "ds18b20":
-      return createDs18b20Sensor(id, calibrationOffset);
+      return createDs18b20Sensor({ id, calibrationOffset });
 
     case "aht20":
       return createAht20Sensor({ calibrationOffset });
@@ -45,63 +45,62 @@ const createHardwareSensor = async (config) => {
 
 /**
  * DS18B20 1-Wire temperature sensor
+ *
+ * Exported for direct use and testing; `driver` injects the ds18b20 module
+ * API (`temperature(id, cb)`, `sensors(cb)`) in place of the real import.
  */
-const createDs18b20Sensor = async (sensorId, calibrationOffset) => {
-  const ds18b20 = cjsDefault(await import("ds18b20"));
+export const createDs18b20Sensor = async ({ id: sensorId, calibrationOffset = 0, driver } = {}) => {
+  const ds18b20 = driver ?? cjsDefault(await import("ds18b20"));
+
+  // The driver signals a failed CRC by "succeeding" with `false`, not with an
+  // error. Passed through, `false + offset` is a number: a noisy line would be
+  // reported as a genuine 0 C reading. Anything that isn't a finite number is
+  // a failed read.
+  const rawRead = () =>
+    new Promise((resolve, reject) => {
+      ds18b20.temperature(sensorId, (err, value) => {
+        if (err) return reject(err);
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          return reject(Object.assign(new Error("ds18b20 CRC check failed (corrupt read)"), { code: "ECRC" }));
+        }
+        resolve(value);
+      });
+    });
+
+  const listSensors = () =>
+    new Promise((resolve, reject) => {
+      ds18b20.sensors((err, ids) => (err ? reject(err) : resolve(ids)));
+    });
 
   return {
     type: "ds18b20",
 
     async read() {
-      return new Promise((resolve, reject) => {
-        ds18b20.temperature(sensorId, (err, value) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve({
-            temperature: value + calibrationOffset,
-          });
-        });
-      });
+      return { temperature: (await rawRead()) + calibrationOffset };
     },
 
     async readTemperature() {
-      const data = await this.read();
-      return data.temperature;
+      return (await rawRead()) + calibrationOffset;
     },
 
-    async listSensors() {
-      return new Promise((resolve, reject) => {
-        ds18b20.sensors((err, ids) => {
-          if (err) reject(err);
-          else resolve(ids);
-        });
-      });
-    },
+    listSensors,
 
     async diagnose() {
       const { classifyDs18b20 } = await import("./diagnose.js");
       let busDevices = [];
       try {
-        busDevices = await this.listSensors();
+        busDevices = await listSensors();
       } catch (e) {
         return { status: "error", detail: `1-wire bus error: ${e.message}`, busDevices: [], targetPresent: false, lastError: { code: e.code ?? null, message: e.message } };
       }
       let reading = null;
       let error = null;
       try {
-        // read() adds calibrationOffset; subtract it back for raw 85.0 detection
-        const raw = await new Promise((res, rej) => this._rawRead ? this._rawRead(res, rej) : rej(new Error("no raw read")));
-        reading = raw;
+        reading = await rawRead(); // raw: the 85.0 power-on check must not see the offset
       } catch (e) {
         error = e;
       }
       return classifyDs18b20({ id: sensorId, busDevices, reading, error });
-    },
-
-    _rawRead(resolve, reject) {
-      ds18b20.temperature(sensorId, (err, value) => (err ? reject(err) : resolve(value)));
     },
 
     async cleanup() {
