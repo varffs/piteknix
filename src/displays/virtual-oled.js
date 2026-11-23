@@ -15,9 +15,14 @@ export const terminalFrame = (snapshot, footer) => {
  * Virtual-mode OLED: the real oled-i2c-bus driver drawing into an emulated
  * SSD1306, so the preview is pixel-exact with the device.
  *
- * Views, from PITEKNIX_PREVIEW (comma list, default "web,terminal"; "none" for neither):
+ * Views, from PITEKNIX_PREVIEW (comma list; "none" for neither). Default is
+ * "web,terminal" in an interactive terminal and "none" otherwise (tests, pipes,
+ * pm2), so nothing opens a port or holds the process open unless asked:
  *   web       local browser page (PITEKNIX_PREVIEW_PORT, default 8130, next free if taken)
  *   terminal  the frame in half-block characters (needs a terminal ≥ width + 2 columns)
+ *
+ * A web preview that can't start (ports taken, bad port) is logged and skipped:
+ * the display still works.
  *
  * Returns null if the driver or font isn't installed (caller falls back to text).
  */
@@ -35,18 +40,23 @@ export const createVirtualOled = async (config, { env = process.env, log = conso
   const oled = new Oled(emu.wire, { width, height, address });
   oled.clearDisplay();
 
-  const views = new Set((env.PITEKNIX_PREVIEW ?? "web,terminal").split(",").map((v) => v.trim()));
+  const defaultViews = stdout.isTTY ? "web,terminal" : "none";
+  const views = new Set((env.PITEKNIX_PREVIEW ?? defaultViews).split(",").map((v) => v.trim()));
   let server = null;
   let offTerminal = null;
 
   if (views.has("web")) {
-    server = await startPreviewServer({
-      source: emu,
-      onKey: pressVirtualKey,
-      keys: virtualKeys,
-      port: Number(env.PITEKNIX_PREVIEW_PORT ?? 8130),
-    });
-    log(`[OLED preview] ${server.url}`);
+    try {
+      server = await startPreviewServer({
+        source: emu,
+        onKey: pressVirtualKey,
+        keys: virtualKeys,
+        port: Number(env.PITEKNIX_PREVIEW_PORT ?? 8130),
+      });
+      log(`[OLED preview] ${server.url}`);
+    } catch (e) {
+      log(`[OLED preview] web preview not started: ${e.message}`);
+    }
   }
 
   if (views.has("terminal")) {

@@ -149,5 +149,6 @@ export const virtualKeys = () => [
 
 /** Press a key as if typed: same handler, so buttons, `d` and app listeners all see it. */
 export const pressVirtualKey = (name) => {
-  process.stdin.emit("keypress", name, { name, sequence: name, ctrl: false, meta: false, shift: false });
+  const str = name.length === 1 ? name : undefined; // "space", "up": a name, not a character
+  process.stdin.emit("keypress", str, { name, sequence: str ?? "", ctrl: false, meta: false, shift: false });
 };

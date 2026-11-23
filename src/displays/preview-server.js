@@ -9,7 +9,11 @@ import { toPng } from "./frame-render.js";
  *   GET  /events      server-sent events, one JSON frame per change
  *   GET  /frame.png   current frame (?scale=1..16)
  *   GET  /keys        [{ key, label }] buttons to show
- *   POST /key?name=x  press a virtual key
+ *   POST /key?name=x  press a virtual key (a readline key name: "1", "space", "up")
+ *
+ * Only answers requests addressed to a loopback name (or the bound host), and
+ * only takes key presses from its own page: a page on another origin could
+ * otherwise press the app's buttons with a plain cross-site POST.
  *
  * @param {object} o
  * @param {{snapshot: Function, onChange: Function}} o.source  e.g. an SSD1306 emulator
@@ -23,8 +27,24 @@ export const startPreviewServer = async ({ source, onKey, keys, port = 8130, hos
     return JSON.stringify({ ...s, pixels: Buffer.from(s.pixels).toString("base64") });
   };
 
+  const LOCAL_NAMES = new Set(["127.0.0.1", "localhost", "[::1]", host.includes(":") ? `[${host}]` : host]);
+  const hostName = (h = "") => h.replace(/:\d+$/, "").toLowerCase();
+  const sameOrigin = (req) => {
+    const origin = req.headers.origin;
+    if (origin === undefined) return true; // not a browser cross-site request (curl, tests)
+    try {
+      return new URL(origin).host === req.headers.host;
+    } catch {
+      return false; // "null" or malformed
+    }
+  };
+
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://x");
+    if (!LOCAL_NAMES.has(hostName(req.headers.host))) {
+      res.writeHead(403); // DNS rebinding: a foreign name resolving to this address
+      return res.end();
+    }
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       return res.end(page(title));
@@ -47,8 +67,12 @@ export const startPreviewServer = async ({ source, onKey, keys, port = 8130, hos
       return res.end(JSON.stringify(keys()));
     }
     if (req.method === "POST" && url.pathname === "/key") {
+      if (!sameOrigin(req)) {
+        res.writeHead(403);
+        return res.end();
+      }
       const name = url.searchParams.get("name") ?? "";
-      if (!/^[a-z0-9]$/i.test(name)) {
+      if (!/^[a-z0-9]{1,16}$/i.test(name)) {
         res.writeHead(400);
         return res.end();
       }
@@ -169,5 +193,7 @@ fetch("keys").then((r) => r.json()).then((ks) => {
   const row = document.getElementById("keys");
   for (const k of ks) { const b = document.createElement("button"); b.className = "key"; const kb = document.createElement("b"); kb.textContent = k.key; b.append(kb, String(k.label)); b.onclick = () => press(k.key); row.append(b); }
 });
-addEventListener("keydown", (e) => { if (!e.metaKey && !e.ctrlKey && keyList.includes(e.key)) { e.preventDefault(); press(e.key); } });
+// Browser key names -> the readline names buttons are registered under.
+const NAMES = { " ": "space", Enter: "return", Escape: "escape", Tab: "tab", Backspace: "backspace", ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+addEventListener("keydown", (e) => { const k = NAMES[e.key] ?? e.key; if (!e.metaKey && !e.ctrlKey && keyList.includes(k)) { e.preventDefault(); press(k); } });
 </script></body></html>`;

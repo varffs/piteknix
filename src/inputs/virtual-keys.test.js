@@ -36,3 +36,18 @@ test("press_goes_through_the_same_path_as_typing", async () => {
   process.stdin.off("keypress", spy);
   await b.cleanup();
 });
+
+test("named_keys_press_buttons_registered_under_that_name", async () => {
+  setupKeyboardListener({});
+  const b = createKeyboardInput({ gpio: 6, virtualKey: "space" });
+  let pressed = 0;
+  b.watch(() => pressed++);
+  let heard = "unset";
+  const spy = (str) => (heard = str);
+  process.stdin.on("keypress", spy);
+  pressVirtualKey("space");
+  assert.equal(pressed, 1);
+  assert.equal(heard, undefined, "a key name is not passed off as a typed character");
+  process.stdin.off("keypress", spy);
+  await b.cleanup();
+});

@@ -31,11 +31,15 @@ export const wrapOled = ({ oled, font, width, height }) => ({
     oled.drawLine(x0, y0, x1, y1, color);
   },
 
+  // Outline of the same w x h pixels fillRect fills: corners at (x, y) and (x+w-1, y+h-1).
   drawRect(x, y, w, h, color = 1) {
-    oled.drawLine(x, y, x + w, y, color);
-    oled.drawLine(x + w, y, x + w, y + h, color);
-    oled.drawLine(x + w, y + h, x, y + h, color);
-    oled.drawLine(x, y + h, x, y, color);
+    if (w < 1 || h < 1) return;
+    const x1 = x + w - 1;
+    const y1 = y + h - 1;
+    oled.drawLine(x, y, x1, y, color);
+    oled.drawLine(x1, y, x1, y1, color);
+    oled.drawLine(x1, y1, x, y1, color);
+    oled.drawLine(x, y1, x, y, color);
   },
 
   fillRect(x, y, w, h, color = 1) {

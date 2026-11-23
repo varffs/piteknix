@@ -14,9 +14,9 @@ const fakeSource = () => {
   };
 };
 
-const get = (url, method = "GET") =>
+const get = (url, method = "GET", headers = {}) =>
   new Promise((resolve, reject) => {
-    const req = request(url, { method }, (res) => {
+    const req = request(url, { method, headers }, (res) => {
       const chunks = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode, type: res.headers["content-type"], body: Buffer.concat(chunks) }));
@@ -92,5 +92,42 @@ test("falls_forward_when_port_taken", async () => {
   } finally {
     await a.srv.close();
     await b.srv.close();
+  }
+});
+
+test("key_presses_only_from_its_own_page", async () => {
+  const { srv, keys } = await start();
+  try {
+    const own = new URL(srv.url).origin;
+    assert.equal((await get(`${srv.url}key?name=1`, "POST", { origin: own })).status, 204);
+    assert.equal((await get(`${srv.url}key?name=1`, "POST", { origin: "https://evil.example" })).status, 403);
+    assert.equal((await get(`${srv.url}key?name=1`, "POST", { origin: "null" })).status, 403);
+    assert.deepEqual(keys, ["1"]);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("refuses_requests_addressed_to_a_foreign_host_name", async () => {
+  const { srv, keys } = await start();
+  try {
+    assert.equal((await get(srv.url, "GET", { host: "evil.example:8130" })).status, 403);
+    assert.equal((await get(`${srv.url}key?name=1`, "POST", { host: "evil.example" })).status, 403);
+    assert.equal((await get(srv.url, "GET", { host: `localhost:${new URL(srv.url).port}` })).status, 200);
+    assert.deepEqual(keys, []);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("accepts_named_keys_like_space_and_up", async () => {
+  const { srv, keys } = await start();
+  try {
+    assert.equal((await get(`${srv.url}key?name=space`, "POST")).status, 204);
+    assert.equal((await get(`${srv.url}key?name=up`, "POST")).status, 204);
+    assert.equal((await get(`${srv.url}key?name=${"x".repeat(17)}`, "POST")).status, 400);
+    assert.deepEqual(keys, ["space", "up"]);
+  } finally {
+    await srv.close();
   }
 });
