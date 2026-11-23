@@ -1,6 +1,8 @@
 import { isVirtualMode } from "../env.js";
 import { cjsDefault } from "../utils/cjs.js";
 import { createTerminalDisplay } from "./terminal.js";
+import { wrapOled } from "./oled-wrap.js";
+import { createVirtualOled } from "./virtual-oled.js";
 
 /**
  * Create a display with automatic hardware/virtual mode detection
@@ -15,6 +17,12 @@ import { createTerminalDisplay } from "./terminal.js";
  */
 export const createDisplay = async (config) => {
   if (isVirtualMode()) {
+    // OLEDs: the real driver on an emulated chip, previewed pixel-exact (browser + terminal).
+    // Falls back to the text-only terminal display if the driver isn't installed.
+    if (config.type === "oled") {
+      const emulated = await createVirtualOled(config);
+      if (emulated) return emulated;
+    }
     return createTerminalDisplay(config);
   }
 
@@ -105,61 +113,8 @@ const createOledDisplay = async (config) => {
   oled.clearDisplay();
 
   return {
-    type: "oled",
-    width,
-    height,
-    font,
-    _oled: oled,
+    ...wrapOled({ oled, font, width, height }),
     _i2cBus: i2cBus,
-
-    clear() {
-      oled.clearDisplay();
-    },
-
-    setCursor(x, y) {
-      oled.setCursor(x, y);
-    },
-
-    writeString(fontObj, size, text, color = 1, wrap = true) {
-      oled.writeString(fontObj || font, size, text, color, wrap);
-    },
-
-    writeText(text, options = {}) {
-      const { size = 1, color = 1, wrap = true } = options;
-      oled.writeString(font, size, text, color, wrap);
-    },
-
-    drawLine(x0, y0, x1, y1, color = 1) {
-      oled.drawLine(x0, y0, x1, y1, color);
-    },
-
-    drawRect(x, y, w, h, color = 1) {
-      oled.drawLine(x, y, x + w, y, color);
-      oled.drawLine(x + w, y, x + w, y + h, color);
-      oled.drawLine(x + w, y + h, x, y + h, color);
-      oled.drawLine(x, y + h, x, y, color);
-    },
-
-    fillRect(x, y, w, h, color = 1) {
-      oled.fillRect(x, y, w, h, color);
-    },
-
-    drawBitmap(data) {
-      oled.drawBitmap(data);
-    },
-
-    invert(inverted) {
-      oled.invertDisplay(inverted);
-    },
-
-    turnOff() {
-      oled.turnOffDisplay();
-    },
-
-    turnOn() {
-      oled.turnOnDisplay();
-    },
-
     async cleanup() {
       oled.clearDisplay();
       oled.turnOffDisplay();
@@ -169,3 +124,4 @@ const createOledDisplay = async (config) => {
 };
 
 export { createTerminalDisplay } from "./terminal.js";
+export { createVirtualOled } from "./virtual-oled.js";

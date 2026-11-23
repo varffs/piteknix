@@ -66,6 +66,28 @@ getMode();         // "virtual" or "hardware"
 // VIRTUAL_MODE=false node app.js  (force hardware)
 ```
 
+## OLED preview (virtual mode)
+
+In virtual mode an OLED is the real `oled-i2c-bus` driver drawing into a software
+SSD1306 (`src/displays/ssd1306-emu.js`), so what you see is exactly what the
+chip would receive: real font, sizes, lines, bitmaps, invert, on/off and dim.
+A draw the driver never flushes stays invisible, as on the device.
+
+- **Browser:** `http://127.0.0.1:8130/` (next free port if taken): zoom, pixel
+  grid, pixel coordinates on hover, white / blue / yellow-blue tint, save PNG,
+  and a button per virtual key. Keys typed in the page work too. It only
+  answers on loopback names and only takes key presses from its own page.
+- **Terminal:** the frame in `▀▄█` characters (needs a terminal ≥ 130 columns).
+
+`PITEKNIX_PREVIEW=web,terminal`, `web`, `terminal` or `none`. Unset, it is
+`web,terminal` in an interactive terminal and `none` otherwise (tests, pipes,
+pm2), so set `PITEKNIX_PREVIEW=web` to get the page from a background run.
+`PITEKNIX_PREVIEW_PORT` (default 8130); if the page can't start, the app runs
+on without it. Name buttons with
+`createButton({ ..., label: "Left" })` and app-only keys with
+`registerVirtualKey("h", "HA down/up")` so the page shows them.
+Without `oled-i2c-bus` installed it falls back to the old text-only terminal display.
+
 ## Sensors
 
 ### Supported Types
